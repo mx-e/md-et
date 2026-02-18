@@ -1,0 +1,31 @@
+[project]
+name = "md-et"
+version = "0.1.0"
+description = "MD-ET: Machine-learned molecular dynamics with edge transformers"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "torch>=2.4.0",
+    "ase>=3.23.0",
+    "hydra-core>=1.3.2",
+    "hydra-zen>=0.16.0",
+    "loguru>=0.7.2",
+    "frozendict>=2.4.6",
+    "numpy",
+    "scipy",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/md_et"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

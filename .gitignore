@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+.env
+*.so
+.python-version
+uv.lock
+
+# Test fixtures (model weights - too large for git)
+tests/fixtures/
