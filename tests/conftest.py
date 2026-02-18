@@ -3,19 +3,19 @@ import pytest
 HF_REPO_ID = "mx-e/md-et-v2"
 
 
-@pytest.fixture(scope="session")
-def calculator_unfiltered():
-    """Load calculator once for the entire test session (no force filtering)."""
+@pytest.fixture(scope="session", params=["4l", "5l", "12l"])
+def calculator_unfiltered(request):
+    """Load each model variant once for the test session (no force filtering)."""
     from md_et import load_calculator
     import torch
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    return load_calculator(HF_REPO_ID, device=device, filter_forces=False)
+    return load_calculator(HF_REPO_ID, variant=request.param, device=device, filter_forces=False)
 
 
 @pytest.fixture(scope="session")
 def calculator_filtered():
-    """Load calculator once for the entire test session (with force filtering)."""
+    """Load default model with force filtering for filter-specific tests."""
     from md_et import load_calculator
     import torch
 

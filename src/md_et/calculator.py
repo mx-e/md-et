@@ -40,7 +40,11 @@ def _make_collate_fn(device: str):
     )
 
 
-def _resolve_model_source(source: str | Path) -> Path:
+AVAILABLE_VARIANTS = ["4l", "5l", "12l"]
+DEFAULT_VARIANT = "12l"
+
+
+def _resolve_model_source(source: str | Path, variant: str | None = None) -> Path:
     """
     Resolve a model source to a local directory path.
 
@@ -49,6 +53,8 @@ def _resolve_model_source(source: str | Path) -> Path:
 
     Args:
         source: Local path or HF Hub repo ID (e.g. "mx-e/md-et-v2")
+        variant: Model variant subfolder (e.g. "4l", "5l", "12l").
+            Only used when downloading from HF Hub.
 
     Returns:
         Path to a local directory containing the model files
@@ -60,12 +66,19 @@ def _resolve_model_source(source: str | Path) -> Path:
     # Treat as Hugging Face Hub repo ID
     from huggingface_hub import snapshot_download
 
-    logger.info(f"Downloading model from Hugging Face Hub: {source}")
+    variant = variant or DEFAULT_VARIANT
+    if variant not in AVAILABLE_VARIANTS:
+        raise ValueError(
+            f"Unknown variant '{variant}'. Available: {AVAILABLE_VARIANTS}"
+        )
+
+    logger.info(f"Downloading model from Hugging Face Hub: {source} (variant={variant})")
     cache_dir = snapshot_download(
         repo_id=str(source),
         repo_type="model",
+        allow_patterns=[f"{variant}/**"],
     )
-    return Path(cache_dir)
+    return Path(cache_dir) / variant
 
 
 def _load_model(run_dir_path, device=None, checkpoint_name="best_model"):
@@ -97,7 +110,8 @@ def _load_model(run_dir_path, device=None, checkpoint_name="best_model"):
 
 
 def load_calculator(
-    source: str | Path,
+    source: str | Path = "mx-e/md-et-v2",
+    variant: str | None = None,
     device: str | None = None,
     checkpoint_name: str = "best_model",
     filter_forces: bool = True,
@@ -111,10 +125,15 @@ def load_calculator(
 
     Args:
         source: Either a local path to a training run directory, or a
-            Hugging Face Hub repo ID (e.g. "mx-e/md-et-v2").
+            Hugging Face Hub repo ID. Default: "mx-e/md-et-v2".
             The directory must contain:
             - .hydra/config.yaml (model architecture config)
             - ckpts/{checkpoint_name}.pth (model weights)
+        variant: Model variant when loading from HF Hub. Available:
+            - "4l"  - 4 layers, 256 dim (fastest, 42 MB)
+            - "5l"  - 5 layers, 256 dim (balanced, 49 MB)
+            - "12l" - 12 layers, 192 dim (most accurate, 53 MB, default)
+            Ignored when source is a local path.
         device: Torch device string (e.g. "cuda", "cpu").
             Default: "cuda" if available, else "cpu".
         checkpoint_name: Name of checkpoint file without .pth extension.
@@ -128,8 +147,11 @@ def load_calculator(
 
     Example::
 
-        # From Hugging Face Hub (requires access + huggingface-cli login)
-        calc = load_calculator("mx-e/md-et-v2")
+        # Default (12-layer model from HF Hub)
+        calc = load_calculator()
+
+        # Faster 4-layer variant
+        calc = load_calculator(variant="4l")
 
         # From a local path
         calc = load_calculator("path/to/training_run")
@@ -140,7 +162,7 @@ def load_calculator(
     """
     if device is None:
         device = "cuda" if th.cuda.is_available() else "cpu"
-    run_dir = _resolve_model_source(source)
+    run_dir = _resolve_model_source(source, variant=variant)
     model = _load_model(run_dir, device, checkpoint_name)
     return MDETCalculator(model, device, filter_forces=filter_forces)
 

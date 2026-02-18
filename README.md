@@ -25,11 +25,8 @@ Model weights are hosted on Hugging Face Hub with gated access.
 ```python
 from md_et import load_calculator
 
-# Load from Hugging Face Hub (downloads and caches automatically)
-calc = load_calculator("mx-e/md-et-v2")
-
-# Or load from a local path
-calc = load_calculator("/path/to/training_run")
+# Load the default model (12-layer, most accurate)
+calc = load_calculator()
 
 # Use with ASE
 from ase import Atoms
@@ -42,18 +39,39 @@ forces = atoms.get_forces()            # eV/Angstrom
 hessian = calc.get_hessian(atoms)      # eV/Angstrom^2
 ```
 
+### Model variants
+
+Three model sizes are available, selectable via the `variant` parameter:
+
+| Variant | Layers | Embedding dim | Checkpoint size | Notes |
+|---------|--------|---------------|-----------------|-------|
+| `"4l"` | 4 | 256 | 42 MB | Fastest |
+| `"5l"` | 5 | 256 | 49 MB | Balanced |
+| `"12l"` | 12 | 192 | 53 MB | Most accurate (default) |
+
+```python
+# Fast 4-layer model
+calc = load_calculator(variant="4l")
+
+# Balanced 5-layer model
+calc = load_calculator(variant="5l")
+
+# Full 12-layer model (default)
+calc = load_calculator(variant="12l")
+```
+
 ### Options
 
 ```python
 # For MD simulations (default: filter_forces=True removes net force/torque)
-calc = load_calculator("mx-e/md-et-v2", filter_forces=True)
+calc = load_calculator(filter_forces=True)
 
 # For geometry optimization or Hessian computation
-calc = load_calculator("mx-e/md-et-v2", filter_forces=False)
+calc = load_calculator(filter_forces=False)
 
 # Specify device
-calc = load_calculator("mx-e/md-et-v2", device="cpu")
+calc = load_calculator(device="cpu")
 
-# Use a different checkpoint
-calc = load_calculator("mx-e/md-et-v2", checkpoint_name="model_final")
+# Load from a local path instead of HF Hub
+calc = load_calculator("/path/to/training_run")
 ```

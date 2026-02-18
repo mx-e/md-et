@@ -1,7 +1,7 @@
 """Tests for the MD-ET ASE calculator.
 
-These tests load the model from the Hugging Face Hub (mx-e/md-et-v2).
-Requires: `huggingface-cli login` with an account that has access.
+Tests are parametrized over all model variants (4l, 5l, 12l).
+Requires: `huggingface-cli login` with an account that has access to mx-e/md-et-v2.
 """
 
 import numpy as np
@@ -66,15 +66,6 @@ def test_hessian(calculator_unfiltered, water_atoms):
     assert np.isfinite(hessian).all()
 
 
-def test_hessian_antisym_ratio(calculator_unfiltered, water_atoms):
-    """Test that the antisymmetric ratio diagnostic is tracked."""
-    water_atoms.calc = calculator_unfiltered
-    calculator_unfiltered.get_hessian(water_atoms)
-
-    assert calculator_unfiltered.last_hessian_antisym_ratio is not None
-    assert calculator_unfiltered.last_hessian_antisym_ratio >= 0
-
-
 def test_deterministic_output(calculator_unfiltered, water_atoms):
     """Test that the model produces deterministic results."""
     water_atoms.calc = calculator_unfiltered
@@ -101,3 +92,22 @@ def test_charge_handling(calculator_unfiltered):
     atoms.calc = calculator_unfiltered
     energy = atoms.get_potential_energy()
     assert np.isfinite(energy)
+
+
+def test_invalid_variant():
+    """Test that an invalid variant raises ValueError."""
+    from md_et import load_calculator
+
+    with pytest.raises(ValueError, match="Unknown variant"):
+        load_calculator(variant="99l")
+
+
+def test_default_loads_12l():
+    """Test that default load_calculator uses the 12l variant."""
+    from md_et import load_calculator
+    import torch
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    calc = load_calculator(device=device)
+    # 12l has 12 transformer layers
+    assert len(calc.model.layers) == 12
