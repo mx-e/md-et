@@ -1,18 +1,26 @@
-from pathlib import Path
-
 import pytest
 
-
-FIXTURES_DIR = Path(__file__).parent / "fixtures"
-MODEL_DIR = FIXTURES_DIR / "combined_v3_direct"
+HF_REPO_ID = "mx-e/md-et-v2"
 
 
-@pytest.fixture
-def model_dir():
-    """Path to the test model directory."""
-    if not MODEL_DIR.exists():
-        pytest.skip("Test fixtures not found. Copy model weights to tests/fixtures/")
-    return MODEL_DIR
+@pytest.fixture(scope="session")
+def calculator_unfiltered():
+    """Load calculator once for the entire test session (no force filtering)."""
+    from md_et import load_calculator
+    import torch
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    return load_calculator(HF_REPO_ID, device=device, filter_forces=False)
+
+
+@pytest.fixture(scope="session")
+def calculator_filtered():
+    """Load calculator once for the entire test session (with force filtering)."""
+    from md_et import load_calculator
+    import torch
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    return load_calculator(HF_REPO_ID, device=device, filter_forces=True)
 
 
 @pytest.fixture
