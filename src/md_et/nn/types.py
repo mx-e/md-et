@@ -1,11 +1,7 @@
-from collections.abc import Callable
-from dataclasses import dataclass, field
 from enum import Enum
-from typing import Literal
 
 import torch as th
 from frozendict import frozendict
-from torch.utils.data import Dataset
 
 NODE_FEATURES_OFFSET = 128
 
@@ -19,7 +15,6 @@ class Property(Enum):
 
     @classmethod
     def _missing_(cls, value) -> "Property":
-        # This allows Property["energy"] to work the same as Property.energy
         for member in cls:
             if member.value == value:
                 return member
@@ -109,7 +104,6 @@ property_dtype_dict = frozendict(
 )
 
 
-# we need this workaround to be flexible with float32 and float64
 def property_dtype(prop: Property) -> th.dtype:
     dtype = property_dtype_dict[prop]
     if dtype == th.float32 and th.get_default_dtype() == th.float64:
@@ -141,58 +135,3 @@ property_type = frozendict(
         Property.j_idx_local: PropertyType.edge_wise,
     }
 )
-
-edge_props_to_local_map = frozendict({Property.i_idx: Property.i_idx_local, Property.j_idx: Property.j_idx_local})
-
-
-@dataclass
-class FeatureStats:
-    mean: float
-    var: float
-    atomref: dict[int, float]
-
-
-DatasetStats = dict[Property, FeatureStats]
-
-
-class Split(Enum):
-    train = "train"
-    val = "val"
-    test = "test"
-
-    def __str__(self) -> str:
-        return self.value
-
-    def __repr__(self) -> str:
-        return self.value
-
-    @classmethod
-    def _missing_(cls, value) -> "Split":
-        for member in cls:
-            if member.value == value:
-                return member
-        raise ValueError(f"'{value}' is not a valid {cls.__name__}")
-
-
-@dataclass
-class DatasetSplits:
-    splits: dict[Split, Dataset]
-    dataset_props: dict[Property, str]
-    dataset_stats: DatasetStats | None = None
-
-
-@dataclass
-class PipelineConfig:
-    pre_collate_processors: list[Callable[[list[dict]], list[dict]]] = field(default_factory=list)
-    pre_collate_processors_val: list[Callable[[list[dict]], list[dict]]] | None = None
-    post_collate_processors: list[Callable[[dict], dict]] = field(default_factory=list)
-    post_collate_processors_val: list[Callable[[dict], dict]] | None = None
-    collate_type: Literal["tall", "flat"] = "tall"
-    batch_size_impact: float = 1.0
-    needed_props: list[Property] = field(default_factory=list)
-
-    def __post_init__(self) -> None:
-        if self.pre_collate_processors_val is None:
-            self.pre_collate_processors_val = self.pre_collate_processors
-        if self.post_collate_processors_val is None:
-            self.post_collate_processors_val = self.post_collate_processors

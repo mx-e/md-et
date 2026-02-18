@@ -1,15 +1,8 @@
 import math
-from functools import partial
 from typing import Literal
 
 import torch as th
-from md_et.nn.transforms import (
-    augment_positions,
-    center_positions_on_center_of_mass,
-    dynamic_batch_size,
-    require_grad_positions,
-)
-from md_et.nn.types import PipelineConfig, PropertyType, property_dims, property_type
+from md_et.nn.types import PropertyType, property_dims, property_type
 from md_et.nn.types import Property as Props
 from md_et.nn.dist import set_dtype
 from torch import nn
@@ -19,59 +12,6 @@ from md_et.nn.spherical_harmonics import get_spherical_harmonics
 
 NODE_FEATURES_OFFSET = 128
 MAX_ATOM_TYPE = 128
-
-
-def get_pair_encoder_pipeline_config(
-    augmentation_mult: int,
-    random_rotation: bool,
-    random_reflection: bool,
-    center_positions: bool,
-    dynamic_batch_size_cutoff: int | None = None,
-    include_energy: bool = False,
-    include_dipole: bool = False,
-    do_require_grad_positions: bool = False,
-) -> PipelineConfig:
-    augment = (
-        [
-            partial(
-                augment_positions,
-                augmentation_mult=augmentation_mult,
-                random_reflection=random_reflection,
-                random_rotation=random_rotation,
-            )
-        ]
-        if augmentation_mult > 1
-        else []
-    )
-    dyn_batch = (
-        [partial(dynamic_batch_size, cutoff=dynamic_batch_size_cutoff)]
-        if dynamic_batch_size_cutoff
-        else []
-    )
-    needed_props = [
-        Props.positions,
-        Props.atomic_numbers,
-        Props.multiplicity,
-        Props.charge,
-        Props.forces,
-    ]
-    if include_energy:
-        needed_props += [Props.energy, Props.formation_energy]
-    if include_dipole:
-        needed_props += [Props.dipole]
-    post_collate_processors = (
-        [require_grad_positions] if do_require_grad_positions else []
-    )
-    return PipelineConfig(
-        pre_collate_processors=(
-            [center_positions_on_center_of_mass] if center_positions else []
-        ),
-        post_collate_processors=augment + dyn_batch + post_collate_processors,
-        post_collate_processors_val=post_collate_processors,
-        collate_type="tall",
-        batch_size_impact=float(augmentation_mult),
-        needed_props=needed_props,
-    )
 
 
 class PairEncoder(nn.Module):
