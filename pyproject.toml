@@ -13,7 +13,6 @@ dependencies = [
     "frozendict>=2.4.6",
     "huggingface-hub>=0.20.0",
     "numpy",
-    "scipy",
 ]
 
 [project.optional-dependencies]
