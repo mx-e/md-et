@@ -48,7 +48,7 @@ def _resolve_model_source(source: str | Path) -> Path:
     Otherwise, treat it as a Hugging Face Hub repo ID and download it.
 
     Args:
-        source: Local path or HF Hub repo ID (e.g. "your-org/md-et-v1")
+        source: Local path or HF Hub repo ID (e.g. "mx-e/md-et-v2")
 
     Returns:
         Path to a local directory containing the model files
@@ -111,7 +111,7 @@ def load_calculator(
 
     Args:
         source: Either a local path to a training run directory, or a
-            Hugging Face Hub repo ID (e.g. "your-org/md-et-v1").
+            Hugging Face Hub repo ID (e.g. "mx-e/md-et-v2").
             The directory must contain:
             - .hydra/config.yaml (model architecture config)
             - ckpts/{checkpoint_name}.pth (model weights)
@@ -129,7 +129,7 @@ def load_calculator(
     Example::
 
         # From Hugging Face Hub (requires access + huggingface-cli login)
-        calc = load_calculator("your-org/md-et-v1")
+        calc = load_calculator("mx-e/md-et-v2")
 
         # From a local path
         calc = load_calculator("path/to/training_run")

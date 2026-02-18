@@ -5,7 +5,7 @@ Machine-learned molecular dynamics with edge transformers. ASE calculator interf
 ## Installation
 
 ```bash
-pip install git+https://github.com/YOUR_ORG/md-et.git
+pip install git+https://github.com/mx-e/md-et.git
 ```
 
 ## Getting access to model weights
@@ -13,7 +13,7 @@ pip install git+https://github.com/YOUR_ORG/md-et.git
 Model weights are hosted on Hugging Face Hub with gated access.
 
 1. Create a [Hugging Face](https://huggingface.co) account
-2. Go to [your-org/md-et-v1](https://huggingface.co/your-org/md-et-v1) and request access
+2. Go to [mx-e/md-et-v2](https://huggingface.co/mx-e/md-et-v2) and request access
 3. Once approved, log in locally:
    ```bash
    pip install huggingface-hub
@@ -26,7 +26,7 @@ Model weights are hosted on Hugging Face Hub with gated access.
 from md_et import load_calculator
 
 # Load from Hugging Face Hub (downloads and caches automatically)
-calc = load_calculator("your-org/md-et-v1")
+calc = load_calculator("mx-e/md-et-v2")
 
 # Or load from a local path
 calc = load_calculator("/path/to/training_run")
@@ -46,14 +46,14 @@ hessian = calc.get_hessian(atoms)      # eV/Angstrom^2
 
 ```python
 # For MD simulations (default: filter_forces=True removes net force/torque)
-calc = load_calculator("your-org/md-et-v1", filter_forces=True)
+calc = load_calculator("mx-e/md-et-v2", filter_forces=True)
 
 # For geometry optimization or Hessian computation
-calc = load_calculator("your-org/md-et-v1", filter_forces=False)
+calc = load_calculator("mx-e/md-et-v2", filter_forces=False)
 
 # Specify device
-calc = load_calculator("your-org/md-et-v1", device="cpu")
+calc = load_calculator("mx-e/md-et-v2", device="cpu")
 
 # Use a different checkpoint
-calc = load_calculator("your-org/md-et-v1", checkpoint_name="model_final")
+calc = load_calculator("mx-e/md-et-v2", checkpoint_name="model_final")
 ```
