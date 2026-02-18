@@ -40,6 +40,34 @@ def _make_collate_fn(device: str):
     )
 
 
+def _resolve_model_source(source: str | Path) -> Path:
+    """
+    Resolve a model source to a local directory path.
+
+    If source is a local path that exists, return it directly.
+    Otherwise, treat it as a Hugging Face Hub repo ID and download it.
+
+    Args:
+        source: Local path or HF Hub repo ID (e.g. "your-org/md-et-v1")
+
+    Returns:
+        Path to a local directory containing the model files
+    """
+    local_path = Path(source)
+    if local_path.exists():
+        return local_path
+
+    # Treat as Hugging Face Hub repo ID
+    from huggingface_hub import snapshot_download
+
+    logger.info(f"Downloading model from Hugging Face Hub: {source}")
+    cache_dir = snapshot_download(
+        repo_id=str(source),
+        repo_type="model",
+    )
+    return Path(cache_dir)
+
+
 def _load_model(run_dir_path, device=None, checkpoint_name="best_model"):
     """
     Load a PairEncoder model from a training run checkpoint.
@@ -69,20 +97,22 @@ def _load_model(run_dir_path, device=None, checkpoint_name="best_model"):
 
 
 def load_calculator(
-    run_dir_path: str | Path,
+    source: str | Path,
     device: str | None = None,
     checkpoint_name: str = "best_model",
     filter_forces: bool = True,
 ) -> "MDETCalculator":
     """
-    Load an MD-ET calculator from a training run checkpoint.
+    Load an MD-ET calculator from a local path or Hugging Face Hub.
 
     This is the main entry point for using MD-ET models. It loads the model
     architecture from the Hydra config and the weights from the checkpoint,
     and wraps everything in an ASE-compatible calculator.
 
     Args:
-        run_dir_path: Path to the training run directory. Must contain:
+        source: Either a local path to a training run directory, or a
+            Hugging Face Hub repo ID (e.g. "your-org/md-et-v1").
+            The directory must contain:
             - .hydra/config.yaml (model architecture config)
             - ckpts/{checkpoint_name}.pth (model weights)
         device: Torch device string (e.g. "cuda", "cpu").
@@ -98,16 +128,20 @@ def load_calculator(
 
     Example::
 
-        from md_et import load_calculator
+        # From Hugging Face Hub (requires access + huggingface-cli login)
+        calc = load_calculator("your-org/md-et-v1")
 
+        # From a local path
         calc = load_calculator("path/to/training_run")
+
         atoms.calc = calc
         energy = atoms.get_potential_energy()  # eV
         forces = atoms.get_forces()            # eV/A
     """
     if device is None:
         device = "cuda" if th.cuda.is_available() else "cpu"
-    model = _load_model(Path(run_dir_path), device, checkpoint_name)
+    run_dir = _resolve_model_source(source)
+    model = _load_model(run_dir, device, checkpoint_name)
     return MDETCalculator(model, device, filter_forces=filter_forces)
 
 
