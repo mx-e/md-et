@@ -344,3 +344,246 @@ class MDETCalculator(Calculator):
             )
 
         return H_sym
+
+    # =========================================================================
+    # Batched operations (for PES exploration with PRFO optimizer)
+    # =========================================================================
+
+    def get_batched_forces_and_energy(
+        self, atoms_list: list[Atoms]
+    ) -> list[tuple[np.ndarray, float]]:
+        """
+        Compute forces and energy for a batch of Atoms in one forward pass.
+
+        All atoms in the batch must have the same number of atoms and species.
+
+        Args:
+            atoms_list: List of ASE Atoms objects (same molecule, different positions).
+
+        Returns:
+            List of (forces_eV_Ang, energy_eV) tuples.
+        """
+        if not atoms_list:
+            return []
+
+        B = len(atoms_list)
+        positions_list = [
+            th.tensor(a.positions * ANG_TO_BOHR, dtype=th.float32)
+            for a in atoms_list
+        ]
+        positions_t = th.stack(positions_list).to(self.device)  # (B, N, 3)
+
+        atomic_numbers_t = (
+            th.tensor(atoms_list[0].numbers, dtype=th.int64)
+            .unsqueeze(0)
+            .expand(B, -1)
+            .to(self.device)
+        )
+
+        charge_val = atoms_list[0].info.get("charge", 0)
+        data = {
+            Props.positions: positions_t,
+            Props.atomic_numbers: atomic_numbers_t,
+            Props.mask: th.ones_like(atomic_numbers_t, dtype=th.bool),
+            Props.charge: th.full((B, 1), charge_val, dtype=th.int64, device=self.device),
+            Props.multiplicity: th.ones((B, 1), dtype=th.int64, device=self.device),
+        }
+
+        with th.no_grad():
+            outputs = self.model(data)
+            energy = outputs.get(Props.formation_energy, outputs.get(Props.energy))
+            forces_batched = outputs[Props.forces]
+
+            if self.filter_forces:
+                n_nodes = (data[Props.atomic_numbers] != 0).sum(dim=1)
+                forces_batched = remove_net_force(forces_batched, n_nodes)
+                forces_batched = remove_net_torque(data[Props.positions], forces_batched, n_nodes)
+
+            forces_ev = (forces_batched * HARTREE_BOHR_TO_EV_ANG).cpu().numpy()
+            energy_ev = (energy.squeeze(-1) * HARTREE_TO_EV).cpu().numpy()
+
+        return [(forces_ev[i], float(energy_ev[i])) for i in range(B)]
+
+    def get_batched_hessians(
+        self, atoms_list: list[Atoms], hessian_batch_size: int = 16
+    ) -> list[tuple[np.ndarray, float, np.ndarray]]:
+        """
+        Compute forces, energy, and Hessian for a batch of Atoms.
+
+        Uses vmap(jacfwd(...)) to compute all Hessians in parallel on GPU.
+        Falls back to sequential computation if vmap is not available.
+        Processes in chunks of hessian_batch_size to manage memory.
+
+        All atoms in the batch must have the same number of atoms and species.
+
+        Args:
+            atoms_list: List of ASE Atoms objects (same molecule, different positions).
+            hessian_batch_size: Max number of Hessians to compute in parallel.
+                Halved automatically on OOM.
+
+        Returns:
+            List of (forces_eV_Ang, energy_eV, hessian_eV_Ang2) tuples.
+            Hessian is symmetrized, shape (3N, 3N).
+        """
+        if not atoms_list:
+            return []
+
+        B = len(atoms_list)
+        n_atoms = len(atoms_list[0])
+
+        # Build batched input tensors
+        positions_list = [
+            th.tensor(a.positions * ANG_TO_BOHR, dtype=th.float32)
+            for a in atoms_list
+        ]
+        positions_t = th.stack(positions_list).to(self.device)  # (B, N, 3)
+
+        atomic_numbers_t = (
+            th.tensor(atoms_list[0].numbers, dtype=th.int64)
+            .unsqueeze(0)
+            .expand(B, -1)
+            .to(self.device)
+        )
+
+        charge_val = atoms_list[0].info.get("charge", 0)
+        data = {
+            Props.positions: positions_t,
+            Props.atomic_numbers: atomic_numbers_t,
+            Props.mask: th.ones_like(atomic_numbers_t, dtype=th.bool),
+            Props.charge: th.full((B, 1), charge_val, dtype=th.int64, device=self.device),
+            Props.multiplicity: th.ones((B, 1), dtype=th.int64, device=self.device),
+        }
+
+        # Batched forward pass for energy/forces
+        with th.no_grad():
+            outputs = self.model(data)
+            energy = outputs.get(Props.formation_energy, outputs.get(Props.energy))
+            forces_batched = outputs[Props.forces]
+
+            if self.filter_forces:
+                n_nodes = (data[Props.atomic_numbers] != 0).sum(dim=1)
+                forces_batched = remove_net_force(forces_batched, n_nodes)
+                forces_batched = remove_net_torque(data[Props.positions], forces_batched, n_nodes)
+
+            forces_ev = (forces_batched * HARTREE_BOHR_TO_EV_ANG).cpu().numpy()
+            energy_ev = (energy.squeeze(-1) * HARTREE_TO_EV).cpu().numpy()
+
+        # Batched Hessian via vmap(jacfwd(...))
+        th.cuda.empty_cache() if self.device != "cpu" else None
+
+        try:
+            jacobians = self._batched_jacobians_vmap(
+                positions_t, atoms_list[0], hessian_batch_size
+            )
+        except Exception as e:
+            logger.warning(f"vmap+jacfwd failed ({e}), falling back to sequential Jacobians")
+            jacobians = self._batched_jacobians_sequential(positions_t, data, n_atoms)
+
+        results = []
+        for i in range(B):
+            J = jacobians[i]  # (3N, 3N)
+            H_raw = -J * HARTREE_BOHR2_TO_EV_ANG2
+            H_sym = (H_raw + H_raw.T) / 2
+            results.append((forces_ev[i], float(energy_ev[i]), H_sym))
+
+        return results
+
+    def _batched_jacobians_vmap(
+        self, positions_t: th.Tensor, ref_atoms: Atoms, chunk_size: int = 16
+    ) -> np.ndarray:
+        """Compute Jacobians for all samples using vmap(jacfwd(...)).
+
+        Forward-mode AD (jacfwd) is used because for this square Jacobian
+        (3N -> 3N) it requires the same number of passes as reverse-mode
+        but each pass is cheaper (no activation storage / tape replay).
+
+        Processes in chunks to avoid GPU OOM, halving chunk size on failure.
+
+        Returns:
+            numpy array of shape (B, 3N, 3N)
+        """
+        n_atoms = len(ref_atoms)
+        B = positions_t.shape[0]
+
+        # Static inputs (same for all samples)
+        an = th.tensor(ref_atoms.numbers, dtype=th.int64, device=self.device)
+        charge_val = ref_atoms.info.get("charge", 0)
+        charge = th.tensor([[charge_val]], dtype=th.int64, device=self.device)
+        mult = th.ones((1, 1), dtype=th.int64, device=self.device)
+        mask = th.ones_like(an, dtype=th.bool).unsqueeze(0)
+
+        params_and_buffers = {
+            **dict(self.model.named_parameters()),
+            **dict(self.model.named_buffers()),
+        }
+        model = self.model
+
+        def single_force_fn(positions):
+            """positions: (N, 3) -> forces: (N*3,)"""
+            data = {
+                Props.positions: positions.unsqueeze(0),
+                Props.atomic_numbers: an.unsqueeze(0),
+                Props.mask: mask,
+                Props.charge: charge,
+                Props.multiplicity: mult,
+            }
+            out = th.func.functional_call(model, params_and_buffers, (data,))
+            return out[Props.forces].reshape(-1)
+
+        batched_jac_fn = th.func.vmap(th.func.jacfwd(single_force_fn))
+
+        all_jacobians = []
+        start = 0
+        while start < B:
+            chunk = positions_t[start : start + chunk_size]
+            try:
+                J_chunk = batched_jac_fn(chunk)
+                J_chunk = J_chunk.reshape(-1, n_atoms * 3, n_atoms * 3)
+                all_jacobians.append(J_chunk.detach().cpu().numpy())
+                del J_chunk
+                if self.device != "cpu":
+                    th.cuda.empty_cache()
+                start += chunk_size
+            except RuntimeError as e:
+                if "out of memory" in str(e) and chunk_size > 1:
+                    chunk_size = max(1, chunk_size // 2)
+                    logger.warning(f"vmap OOM, halving chunk size to {chunk_size}")
+                    del chunk
+                    if self.device != "cpu":
+                        th.cuda.empty_cache()
+                else:
+                    raise
+
+        return np.concatenate(all_jacobians, axis=0)
+
+    def _batched_jacobians_sequential(
+        self, positions_t: th.Tensor, data: dict, n_atoms: int
+    ) -> np.ndarray:
+        """Fallback: compute Jacobians one at a time.
+
+        Returns:
+            numpy array of shape (B, 3N, 3N)
+        """
+        B = positions_t.shape[0]
+        jacobians = []
+        for i in range(B):
+            pos_i = positions_t[i : i + 1].clone().detach()
+
+            single_data = {
+                Props.positions: pos_i,
+                Props.atomic_numbers: data[Props.atomic_numbers][i : i + 1],
+                Props.mask: data[Props.mask][i : i + 1],
+                Props.charge: data[Props.charge][i : i + 1],
+                Props.multiplicity: data[Props.multiplicity][i : i + 1],
+            }
+
+            def force_fn(pos, d=single_data):
+                inp = d.copy()
+                inp[Props.positions] = pos
+                return self.model(inp)[Props.forces].view(-1, 3)
+
+            J = th.autograd.functional.jacobian(force_fn, pos_i, create_graph=False)
+            J = J.detach().cpu().squeeze().numpy().reshape(n_atoms * 3, n_atoms * 3)
+            jacobians.append(J)
+
+        return np.stack(jacobians)
