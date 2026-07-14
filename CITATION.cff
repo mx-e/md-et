@@ -1,0 +1,43 @@
+cff-version: 1.2.0
+message: "If you use MD-ET, please cite the paper below."
+title: "MD-ET"
+abstract: >-
+  An off-the-shelf transformer approach to molecular dynamics: a machine-learned
+  edge-transformer (PairEncoder) force field with an ASE calculator interface.
+type: software
+license: Apache-2.0
+authors:
+  - family-names: Eissler
+    given-names: Max
+  - family-names: Korjakow
+    given-names: Tim
+  - family-names: Ganscha
+    given-names: Stefan
+  - family-names: Unke
+    given-names: Oliver T.
+  - family-names: Müller
+    given-names: Klaus-Robert
+  - family-names: Gugler
+    given-names: Stefan
+url: "https://arxiv.org/abs/2503.01431"
+preferred-citation:
+  type: article
+  title: "How simple can you go? An off-the-shelf transformer approach to molecular dynamics"
+  authors:
+    - family-names: Eissler
+      given-names: Max
+    - family-names: Korjakow
+      given-names: Tim
+    - family-names: Ganscha
+      given-names: Stefan
+    - family-names: Unke
+      given-names: Oliver T.
+    - family-names: Müller
+      given-names: Klaus-Robert
+    - family-names: Gugler
+      given-names: Stefan
+  year: 2025
+  identifiers:
+    - type: other
+      value: "arXiv:2503.01431"
+      description: arXiv preprint
